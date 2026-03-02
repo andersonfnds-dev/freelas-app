@@ -654,7 +654,24 @@
   <!-- ═══════════════════════════════════════════ PAGAMENTOS -->
   <section id="sec-pagamentos" class="section">
 
+    <div class="card" style="margin-bottom:16px">
+      <div class="cal-header">
+        <div class="cal-nav">
+          <button class="icon-btn" onclick="changePagMonth(-1)">&#8592;</button>
+        </div>
+        <div class="cal-title" id="pag-month-label"></div>
+        <div class="cal-nav">
+          <button class="icon-btn" onclick="changePagMonth(1)">&#8594;</button>
+        </div>
+      </div>
+      <div style="text-align:center;color:var(--text2);font-size:13px" id="pag-hours-info"></div>
+    </div>
+
     <div class="pag-summary">
+      <div class="summary-card">
+        <div class="summary-label">A Receber</div>
+        <div class="summary-value accent" id="sum-total">R$ 0</div>
+      </div>
       <div class="summary-card">
         <div class="summary-label">Recebido</div>
         <div class="summary-value green" id="sum-recebido">R$ 0</div>
@@ -662,10 +679,6 @@
       <div class="summary-card">
         <div class="summary-label">Pendente</div>
         <div class="summary-value red" id="sum-pendente">R$ 0</div>
-      </div>
-      <div class="summary-card">
-        <div class="summary-label">Total</div>
-        <div class="summary-value accent" id="sum-total">R$ 0</div>
       </div>
     </div>
 
@@ -1235,8 +1248,36 @@ function renderWeeks() {
 // ══════════════════════════════════════════════════════════
 //  PAGAMENTOS
 // ══════════════════════════════════════════════════════════
+const VALOR_HORA = 80;
 let pagamentos = load('pagamentos', []);
 let editingPagId = null;
+let pagYear, pagMonth;
+
+function initPagamentos() {
+  const now = new Date();
+  pagYear = now.getFullYear();
+  pagMonth = now.getMonth();
+  renderPagamentos();
+}
+
+function changePagMonth(dir) {
+  pagMonth += dir;
+  if (pagMonth > 11) { pagMonth = 0; pagYear++; }
+  if (pagMonth < 0) { pagMonth = 11; pagYear--; }
+  renderPagamentos();
+}
+
+function getMonthTotalMs(year, month) {
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  let totalMs = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const timerMs = workLog[key] || 0;
+    const manualMs = (dayEntries[key] || []).filter(e => !e.fromTimer).reduce((s, e) => s + e.ms, 0);
+    totalMs += timerMs + manualMs;
+  }
+  return totalMs;
+}
 
 function openPagModal(id) {
   editingPagId = id ?? null;
@@ -1299,21 +1340,42 @@ function togglePagStatus(id) {
 }
 
 function renderPagamentos() {
-  const list = document.getElementById('pag-list');
-  let recebido = 0, pendente = 0;
-  pagamentos.forEach(p => {
+  // Month label
+  document.getElementById('pag-month-label').textContent =
+    MONTHS_PT[pagMonth] + ' ' + pagYear;
+
+  // Calculate total hours for the month
+  const totalMs = getMonthTotalMs(pagYear, pagMonth);
+  const totalHours = totalMs / 3600000;
+  const aReceber = totalHours * VALOR_HORA;
+
+  // Hours info
+  const hoursLabel = msToLabel(totalMs);
+  document.getElementById('pag-hours-info').textContent =
+    `${hoursLabel} trabalhadas × ${fmtBRL(VALOR_HORA)}/h`;
+
+  // Filter payments by selected month
+  const monthPrefix = `${pagYear}-${String(pagMonth + 1).padStart(2, '0')}`;
+  const monthPagamentos = pagamentos.filter(p => p.date.startsWith(monthPrefix));
+
+  let recebido = 0;
+  monthPagamentos.forEach(p => {
     if (p.status === 'recebido') recebido += p.value;
-    else pendente += p.value;
   });
+
+  const pendente = Math.max(0, aReceber - recebido);
+
+  document.getElementById('sum-total').textContent = fmtBRL(aReceber);
   document.getElementById('sum-recebido').textContent = fmtBRL(recebido);
   document.getElementById('sum-pendente').textContent = fmtBRL(pendente);
-  document.getElementById('sum-total').textContent = fmtBRL(recebido + pendente);
 
-  if (!pagamentos.length) {
-    list.innerHTML = `<div class="empty-state"><div class="icon">💸</div><p>Nenhum pagamento registrado ainda</p></div>`;
+  // Render payment list
+  const list = document.getElementById('pag-list');
+  if (!monthPagamentos.length) {
+    list.innerHTML = `<div class="empty-state"><div class="icon">💸</div><p>Nenhum pagamento registrado neste mês</p></div>`;
     return;
   }
-  const sorted = [...pagamentos].sort((a,b) => b.date.localeCompare(a.date));
+  const sorted = [...monthPagamentos].sort((a,b) => b.date.localeCompare(a.date));
   list.innerHTML = sorted.map(p => `
     <div class="pag-item">
       <div class="pag-item-left">
@@ -1448,7 +1510,7 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 //  INIT
 // ══════════════════════════════════════════════════════════
 initCalendar();
-renderPagamentos();
+initPagamentos();
 renderRequisitos();
 </script>
 </body>
