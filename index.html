@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>freelas</title>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -819,12 +821,30 @@
 
 <script>
 // ══════════════════════════════════════════════════════════
+//  FIREBASE INIT
+// ══════════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyB3Rw8RY84mHu3IoPiMQ6KVaF9keswaxp0",
+  authDomain: "freelas-app-e153d.firebaseapp.com",
+  databaseURL: "https://freelas-app-e153d-default-rtdb.firebaseio.com",
+  projectId: "freelas-app-e153d",
+  storageBucket: "freelas-app-e153d.firebasestorage.app",
+  messagingSenderId: "100058315779",
+  appId: "1:100058315779:web:c76d336ef72ab028412236",
+  measurementId: "G-599JPRP5YC"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ══════════════════════════════════════════════════════════
 //  STORAGE HELPERS
 // ══════════════════════════════════════════════════════════
-function load(key, def) {
+function loadLocal(key, def) {
   try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch { return def; }
 }
-function save(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+function save(key, val) {
+  db.ref(key).set(val);
+}
 
 // ══════════════════════════════════════════════════════════
 //  NAV
@@ -850,7 +870,7 @@ let timerElapsed = 0;
 let timerActualStart = null;
 
 // workLog: { "YYYY-MM-DD": totalMs }
-let workLog = load('workLog', {});
+let workLog = loadLocal('workLog', {});
 
 function todayKey() {
   const d = new Date();
@@ -1026,8 +1046,8 @@ function renderCalendar() {
 // ══════════════════════════════════════════════════════════
 //  DAY DETAIL VIEW
 // ══════════════════════════════════════════════════════════
-let dayEntries = load('dayEntries', {});
-let dayNotes   = load('dayNotes', {});
+let dayEntries = loadLocal('dayEntries', {});
+let dayNotes   = loadLocal('dayNotes', {});
 let currentDayKey = null;
 
 const DAY_PASSWORD = '123456';
@@ -1249,7 +1269,7 @@ function renderWeeks() {
 //  PAGAMENTOS
 // ══════════════════════════════════════════════════════════
 const VALOR_HORA = 80;
-let pagamentos = load('pagamentos', []);
+let pagamentos = loadLocal('pagamentos', []);
 let editingPagId = null;
 let pagYear, pagMonth;
 
@@ -1412,7 +1432,7 @@ function esc(s) {
 // ══════════════════════════════════════════════════════════
 //  REQUISITOS
 // ══════════════════════════════════════════════════════════
-let requisitos = load('requisitos', []);
+let requisitos = loadLocal('requisitos', []);
 
 function openReqModal() {
   document.getElementById('req-text').value = '';
@@ -1507,11 +1527,69 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 });
 
 // ══════════════════════════════════════════════════════════
-//  INIT
+//  INIT — Load from Firebase, migrate localStorage if needed
 // ══════════════════════════════════════════════════════════
-initCalendar();
-initPagamentos();
-renderRequisitos();
+const DATA_KEYS = ['workLog', 'dayEntries', 'dayNotes', 'pagamentos', 'requisitos'];
+const DATA_DEFAULTS = {
+  workLog: {}, dayEntries: {}, dayNotes: {}, pagamentos: [], requisitos: []
+};
+const DATA_VARS = { workLog: v => workLog = v, dayEntries: v => dayEntries = v,
+  dayNotes: v => dayNotes = v, pagamentos: v => pagamentos = v, requisitos: v => requisitos = v };
+
+function renderAll() {
+  initCalendar();
+  initPagamentos();
+  renderRequisitos();
+}
+
+// First load: fetch from Firebase, migrate localStorage if Firebase is empty
+db.ref('/').once('value').then(snap => {
+  const fbData = snap.val() || {};
+  let migrated = false;
+
+  DATA_KEYS.forEach(key => {
+    if (fbData[key] != null) {
+      // Firebase has data — use it
+      DATA_VARS[key](fbData[key]);
+    } else {
+      // Firebase empty — check localStorage for migration
+      const local = loadLocal(key, DATA_DEFAULTS[key]);
+      const hasData = Array.isArray(local) ? local.length > 0 : Object.keys(local).length > 0;
+      if (hasData) {
+        DATA_VARS[key](local);
+        db.ref(key).set(local);
+        migrated = true;
+      }
+    }
+  });
+
+  renderAll();
+  if (migrated) toast('Dados migrados para a nuvem');
+
+  // Set up real-time listeners after initial load
+  setupListeners();
+}).catch(err => {
+  console.error('Firebase load failed, using localStorage:', err);
+  renderAll();
+});
+
+function setupListeners() {
+  DATA_KEYS.forEach(key => {
+    db.ref(key).on('value', snap => {
+      const val = snap.val();
+      DATA_VARS[key](val ?? DATA_DEFAULTS[key]);
+      // Re-render affected sections
+      if (key === 'workLog' || key === 'dayEntries' || key === 'dayNotes') {
+        renderCalendar();
+        if (currentDayKey) renderDayEntries();
+        // Also update pagamentos since it depends on hours
+        renderPagamentos();
+      }
+      if (key === 'pagamentos') renderPagamentos();
+      if (key === 'requisitos') renderRequisitos();
+    });
+  });
+}
 </script>
 </body>
 </html>
