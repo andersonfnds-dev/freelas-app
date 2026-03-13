@@ -35,6 +35,29 @@ export default function Pagamentos() {
   monthPagamentos.forEach(p => { if (p.status === 'recebido') recebido += p.value; });
   const pendente = Math.max(0, aReceber - recebido);
 
+  // Breakdown por projeto
+  const daysInMonth = new Date(pagYear, pagMonth + 1, 0).getDate();
+  const projMs = {};
+  for (let d = 1; d <= daysInMonth; d++) {
+    const key = `${pagYear}-${String(pagMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const timerD = workLog[key] || 0;
+    if (timerD) projMs['Sem projeto'] = (projMs['Sem projeto'] || 0) + timerD;
+    (dayEntries[key] || []).filter(e => !e.fromTimer).forEach(e => {
+      const proj = e.project?.trim() || 'Sem projeto';
+      projMs[proj] = (projMs[proj] || 0) + e.ms;
+    });
+  }
+  const projectRows = Object.entries(projMs)
+    .map(([proj, ms]) => {
+      const projAReceber = (ms / 3600000) * VALOR_HORA;
+      const projRecebido = monthPagamentos
+        .filter(p => p.status === 'recebido' && p.client.trim().toLowerCase() === proj.toLowerCase())
+        .reduce((s, p) => s + p.value, 0);
+      const projPendente = Math.max(0, projAReceber - projRecebido);
+      return { proj, ms, projAReceber, projRecebido, projPendente };
+    })
+    .sort((a, b) => b.ms - a.ms);
+
   const openModal = (id) => {
     if (id != null) {
       const p = pagamentos.find(x => x.id === id);
@@ -115,6 +138,38 @@ export default function Pagamentos() {
           <div className="summary-value red">{fmtBRL(pendente)}</div>
         </div>
       </div>
+
+      {projectRows.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-title">Por Projeto</div>
+          <table className="week-table">
+            <thead>
+              <tr>
+                <th>Projeto</th>
+                <th style={{ textAlign: 'right' }}>Horas</th>
+                <th style={{ textAlign: 'right' }}>A Receber</th>
+                <th style={{ textAlign: 'right' }}>Recebido</th>
+                <th style={{ textAlign: 'right' }}>Pendente</th>
+              </tr>
+            </thead>
+            <tbody>
+              {projectRows.map(({ proj, ms, projAReceber, projRecebido, projPendente }) => (
+                <tr key={proj}>
+                  <td style={{ fontWeight: 500, color: proj === 'Sem projeto' ? 'var(--text2)' : 'var(--text)' }}>
+                    {proj}
+                  </td>
+                  <td style={{ textAlign: 'right', color: 'var(--green)' }}>{msToLabel(ms)}</td>
+                  <td style={{ textAlign: 'right', color: 'var(--accent)' }}>{fmtBRL(projAReceber)}</td>
+                  <td style={{ textAlign: 'right', color: 'var(--green)' }}>{fmtBRL(projRecebido)}</td>
+                  <td style={{ textAlign: 'right', color: projPendente > 0 ? 'var(--red)' : 'var(--text2)' }}>
+                    {fmtBRL(projPendente)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="pag-header">
         <div className="pag-title">Pagamentos</div>
