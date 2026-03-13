@@ -10,9 +10,10 @@ export default function DayDetail({ dayKey, onBack }) {
   const [password, setPassword] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
+  const [project, setProject] = useState('');
+  const [editingId, setEditingId] = useState(null);
   const [noteText, setNoteText] = useState(dayNotes[dayKey] || '');
   const passwordRef = useRef(null);
-  const startRef = useRef(null);
 
   useEffect(() => {
     setNoteText(dayNotes[dayKey] || '');
@@ -27,6 +28,21 @@ export default function DayDetail({ dayKey, onBack }) {
   const manualMs = entries.filter(e => !e.fromTimer).reduce((s, e) => s + e.ms, 0);
   const totalMs = timerMs + manualMs;
 
+  const openAdd = () => {
+    setEditingId(null);
+    setPassword('');
+    setAuthOpen(true);
+  };
+
+  const openEdit = (entry) => {
+    setEditingId(entry.id);
+    setStartTime(entry.start);
+    setEndTime(entry.end);
+    setProject(entry.project || '');
+    setPassword('');
+    setAuthOpen(true);
+  };
+
   const confirmAuth = () => {
     if (password !== DAY_PASSWORD) {
       toast('Senha incorreta');
@@ -35,10 +51,13 @@ export default function DayDetail({ dayKey, onBack }) {
     }
     setAuthOpen(false);
     setPassword('');
-    const now = new Date();
-    const hhmm = fmtTimeFromDate(now);
-    setStartTime(hhmm);
-    setEndTime(hhmm);
+    if (editingId == null) {
+      const now = new Date();
+      const hhmm = fmtTimeFromDate(now);
+      setStartTime(hhmm);
+      setEndTime(hhmm);
+      setProject('');
+    }
     setHorarioOpen(true);
   };
 
@@ -51,10 +70,19 @@ export default function DayDetail({ dayKey, onBack }) {
     if (endMs <= startMs) { toast('O fim deve ser após o início'); return; }
 
     const ms = endMs - startMs;
-    const newEntries = [...(dayEntries[dayKey] || []), { id: Date.now(), start: startTime, end: endTime, ms, fromTimer: false }];
+    const existing = dayEntries[dayKey] || [];
+    let newEntries;
+    if (editingId != null) {
+      newEntries = existing.map(e =>
+        e.id === editingId ? { ...e, start: startTime, end: endTime, ms, project: project.trim() } : e
+      );
+      toast('Horário atualizado');
+    } else {
+      newEntries = [...existing, { id: Date.now(), start: startTime, end: endTime, ms, fromTimer: false, project: project.trim() }];
+      toast(`Horário adicionado: ${msToLabel(ms)}`);
+    }
     save('dayEntries', { ...dayEntries, [dayKey]: newEntries });
     setHorarioOpen(false);
-    toast(`Horário adicionado: ${msToLabel(ms)}`);
   };
 
   const deleteEntry = (id) => {
@@ -84,7 +112,7 @@ export default function DayDetail({ dayKey, onBack }) {
             <div className="day-view-title">&#128336; <span>Registro de Horários — {dateLabel}</span></div>
             <div className="day-view-total">Total: {msToLabel(totalMs) || '0 min'}</div>
           </div>
-          <button className="btn btn-primary btn-sm" onClick={() => { setPassword(''); setAuthOpen(true); }}>
+          <button className="btn btn-primary btn-sm" onClick={openAdd}>
             + Adicionar Horário
           </button>
         </div>
@@ -95,13 +123,14 @@ export default function DayDetail({ dayKey, onBack }) {
               <th>Início</th>
               <th>Fim</th>
               <th>Duração</th>
+              <th>Projeto</th>
               <th style={{ textAlign: 'right' }}>Ações</th>
             </tr>
           </thead>
           <tbody>
             {!entries.length && !timerMs ? (
               <tr>
-                <td colSpan="4" style={{ textAlign: 'center', color: 'var(--text3)', padding: '24px 0' }}>
+                <td colSpan="5" style={{ textAlign: 'center', color: 'var(--text3)', padding: '24px 0' }}>
                   Nenhum registro neste dia.
                 </td>
               </tr>
@@ -111,7 +140,11 @@ export default function DayDetail({ dayKey, onBack }) {
                   <td>{e.start}</td>
                   <td>{e.end}</td>
                   <td>{msToLabel(e.ms)}</td>
+                  <td style={{ color: e.project ? 'var(--text)' : 'var(--text3)', fontSize: 13 }}>
+                    {e.project || '—'}
+                  </td>
                   <td style={{ textAlign: 'right' }}>
+                    <button className="icon-btn" title="Editar" onClick={() => openEdit(e)}>✏️</button>
                     <button className="icon-btn" title="Remover" onClick={() => deleteEntry(e.id)}>🗑️</button>
                   </td>
                 </tr>
@@ -146,7 +179,7 @@ export default function DayDetail({ dayKey, onBack }) {
           </>
         }
       >
-        <p className="modal-subtitle">Digite a senha para adicionar este horário.</p>
+        <p className="modal-subtitle">Digite a senha para {editingId != null ? 'editar' : 'adicionar'} este horário.</p>
         <div className="form-group">
           <label>Senha</label>
           <input
@@ -161,7 +194,8 @@ export default function DayDetail({ dayKey, onBack }) {
         </div>
       </Modal>
 
-      <Modal open={horarioOpen} onClose={() => setHorarioOpen(false)} title="Adicionar Horário"
+      <Modal open={horarioOpen} onClose={() => setHorarioOpen(false)}
+        title={editingId != null ? 'Editar Horário' : 'Adicionar Horário'}
         footer={
           <>
             <button className="btn btn-ghost" onClick={() => setHorarioOpen(false)}>Cancelar</button>
@@ -171,11 +205,15 @@ export default function DayDetail({ dayKey, onBack }) {
       >
         <div className="form-group">
           <label>Início</label>
-          <input type="time" ref={startRef} value={startTime} onChange={(e) => setStartTime(e.target.value)} autoFocus />
+          <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} autoFocus />
         </div>
         <div className="form-group">
           <label>Fim</label>
           <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label>Projeto</label>
+          <input type="text" placeholder="Ex: App Mobile" value={project} onChange={(e) => setProject(e.target.value)} />
         </div>
       </Modal>
     </>
