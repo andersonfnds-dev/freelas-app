@@ -126,7 +126,7 @@ export default function Pagamentos() {
 
       <div className="pag-summary">
         <div className="summary-card">
-          <div className="summary-label">A Receber</div>
+          <div className="summary-label">Total</div>
           <div className="summary-value accent">{fmtBRL(aReceber)}</div>
         </div>
         <div className="summary-card">
@@ -147,7 +147,7 @@ export default function Pagamentos() {
               <tr>
                 <th>Projeto</th>
                 <th style={{ textAlign: 'right' }}>Horas</th>
-                <th style={{ textAlign: 'right' }}>A Receber</th>
+                <th style={{ textAlign: 'right' }}>Total</th>
                 <th style={{ textAlign: 'right' }}>Recebido</th>
                 <th style={{ textAlign: 'right' }}>Pendente</th>
               </tr>
