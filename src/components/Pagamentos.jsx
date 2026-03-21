@@ -107,8 +107,74 @@ export default function Pagamentos() {
 
   const sorted = [...monthPagamentos].sort((a, b) => b.date.localeCompare(a.date));
 
+  // Totais globais (todos os pagamentos registrados)
+  const allPagamentos = pagamentos || [];
+  const globalTotal = allPagamentos.reduce((s, p) => s + p.value, 0);
+  const globalRecebido = allPagamentos.filter(p => p.status === 'recebido').reduce((s, p) => s + p.value, 0);
+  const globalPendente = allPagamentos.filter(p => p.status === 'pendente').reduce((s, p) => s + p.value, 0);
+
+  // Breakdown por projeto global
+  const globalProjData = {};
+  allPagamentos.forEach(p => {
+    const proj = p.client.trim() || 'Sem projeto';
+    if (!globalProjData[proj]) globalProjData[proj] = { total: 0, recebido: 0, pendente: 0 };
+    globalProjData[proj].total += p.value;
+    if (p.status === 'recebido') globalProjData[proj].recebido += p.value;
+    else globalProjData[proj].pendente += p.value;
+  });
+  const globalProjectRows = Object.entries(globalProjData)
+    .map(([proj, data]) => ({ proj, ...data }))
+    .sort((a, b) => b.total - a.total);
+
   return (
     <>
+      <div className="pag-global-header">Visão Geral</div>
+
+      <div className="pag-summary" style={{ marginBottom: 16 }}>
+        <div className="summary-card">
+          <div className="summary-label">Total Geral</div>
+          <div className="summary-value accent">{fmtBRL(globalTotal)}</div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-label">Recebido</div>
+          <div className="summary-value green">{fmtBRL(globalRecebido)}</div>
+        </div>
+        <div className="summary-card">
+          <div className="summary-label">Pendente</div>
+          <div className="summary-value red">{fmtBRL(globalPendente)}</div>
+        </div>
+      </div>
+
+      {globalProjectRows.length > 0 && (
+        <div className="card" style={{ marginBottom: 24 }}>
+          <div className="card-title">Por Projeto</div>
+          <table className="week-table">
+            <thead>
+              <tr>
+                <th>Projeto</th>
+                <th style={{ textAlign: 'right' }}>Total</th>
+                <th style={{ textAlign: 'right' }}>Recebido</th>
+                <th style={{ textAlign: 'right' }}>Pendente</th>
+              </tr>
+            </thead>
+            <tbody>
+              {globalProjectRows.map(({ proj, total, recebido: rec, pendente: pend }) => (
+                <tr key={proj}>
+                  <td style={{ fontWeight: 500, color: proj === 'Sem projeto' ? 'var(--text2)' : 'var(--text)' }}>
+                    {proj}
+                  </td>
+                  <td style={{ textAlign: 'right', color: 'var(--accent)' }}>{fmtBRL(total)}</td>
+                  <td style={{ textAlign: 'right', color: 'var(--green)' }}>{fmtBRL(rec)}</td>
+                  <td style={{ textAlign: 'right', color: pend > 0 ? 'var(--red)' : 'var(--text2)' }}>
+                    {fmtBRL(pend)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="cal-header">
           <div className="cal-nav">
