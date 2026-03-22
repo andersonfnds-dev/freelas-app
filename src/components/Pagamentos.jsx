@@ -107,24 +107,49 @@ export default function Pagamentos() {
 
   const sorted = [...monthPagamentos].sort((a, b) => b.date.localeCompare(a.date));
 
-  // Totais globais (todos os pagamentos registrados)
+  // Totais globais baseados em horas trabalhadas (mesma lógica do mês)
   const allPagamentos = pagamentos || [];
-  const globalTotal = allPagamentos.reduce((s, p) => s + p.value, 0);
-  const globalRecebido = allPagamentos.filter(p => p.status === 'recebido').reduce((s, p) => s + p.value, 0);
-  const globalPendente = allPagamentos.filter(p => p.status === 'pendente').reduce((s, p) => s + p.value, 0);
 
-  // Breakdown por projeto global
-  const globalProjData = {};
-  allPagamentos.forEach(p => {
-    const proj = p.client.trim() || 'Sem projeto';
-    if (!globalProjData[proj]) globalProjData[proj] = { total: 0, recebido: 0, pendente: 0 };
-    globalProjData[proj].total += p.value;
-    if (p.status === 'recebido') globalProjData[proj].recebido += p.value;
-    else globalProjData[proj].pendente += p.value;
+  // Coleta todos os meses com dados (workLog, dayEntries ou pagamentos)
+  const allMonthKeys = new Set();
+  Object.keys(workLog || {}).forEach(k => allMonthKeys.add(k.slice(0, 7)));
+  Object.keys(dayEntries || {}).forEach(k => allMonthKeys.add(k.slice(0, 7)));
+  allPagamentos.forEach(p => allMonthKeys.add(p.date.slice(0, 7)));
+
+  let globalAReceber = 0;
+  let globalRecebido = 0;
+  allMonthKeys.forEach(ym => {
+    const [y, m] = ym.split('-').map(Number);
+    const ms = getMonthTotalMs(workLog, dayEntries, y, m - 1);
+    globalAReceber += (ms / 3600000) * VALOR_HORA;
+    const monthPags = allPagamentos.filter(p => p.date.startsWith(ym));
+    globalRecebido += monthPags.filter(p => p.status === 'recebido').reduce((s, p) => s + p.value, 0);
   });
-  const globalProjectRows = Object.entries(globalProjData)
-    .map(([proj, data]) => ({ proj, ...data }))
-    .sort((a, b) => b.total - a.total);
+  const globalTotal = globalAReceber;
+  const globalPendente = Math.max(0, globalAReceber - globalRecebido);
+
+  // Breakdown por projeto global (baseado em horas trabalhadas)
+  const globalProjMs = {};
+  Object.entries(workLog || {}).forEach(([, ms]) => {
+    if (ms > 0) globalProjMs['Sem projeto'] = (globalProjMs['Sem projeto'] || 0) + ms;
+  });
+  Object.values(dayEntries || {}).forEach(entries => {
+    (entries || []).filter(e => !e.fromTimer).forEach(e => {
+      const proj = e.project?.trim() || 'Sem projeto';
+      globalProjMs[proj] = (globalProjMs[proj] || 0) + e.ms;
+    });
+  });
+  const globalProjectRows = Object.entries(globalProjMs)
+    .filter(([, ms]) => ms > 0)
+    .map(([proj, ms]) => {
+      const projAReceber = (ms / 3600000) * VALOR_HORA;
+      const projRecebido = allPagamentos
+        .filter(p => p.status === 'recebido' && p.client.trim().toLowerCase() === proj.toLowerCase())
+        .reduce((s, p) => s + p.value, 0);
+      const projPendente = Math.max(0, projAReceber - projRecebido);
+      return { proj, ms, projAReceber, projRecebido, projPendente };
+    })
+    .sort((a, b) => b.projAReceber - a.projAReceber);
 
   return (
     <>
@@ -158,15 +183,15 @@ export default function Pagamentos() {
               </tr>
             </thead>
             <tbody>
-              {globalProjectRows.map(({ proj, total, recebido: rec, pendente: pend }) => (
+              {globalProjectRows.map(({ proj, projAReceber, projRecebido, projPendente }) => (
                 <tr key={proj}>
                   <td style={{ fontWeight: 500, color: proj === 'Sem projeto' ? 'var(--text2)' : 'var(--text)' }}>
                     {proj}
                   </td>
-                  <td style={{ textAlign: 'right', color: 'var(--accent)' }}>{fmtBRL(total)}</td>
-                  <td style={{ textAlign: 'right', color: 'var(--green)' }}>{fmtBRL(rec)}</td>
-                  <td style={{ textAlign: 'right', color: pend > 0 ? 'var(--red)' : 'var(--text2)' }}>
-                    {fmtBRL(pend)}
+                  <td style={{ textAlign: 'right', color: 'var(--accent)' }}>{fmtBRL(projAReceber)}</td>
+                  <td style={{ textAlign: 'right', color: 'var(--green)' }}>{fmtBRL(projRecebido)}</td>
+                  <td style={{ textAlign: 'right', color: projPendente > 0 ? 'var(--red)' : 'var(--text2)' }}>
+                    {fmtBRL(projPendente)}
                   </td>
                 </tr>
               ))}
